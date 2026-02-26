@@ -13,5 +13,4 @@ source ~/.zshrc
 
 ```bash
 quickq "latest version of nodejs"
-quickq "python package for working with aws"
 ```
