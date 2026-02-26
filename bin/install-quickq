@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_BIN="/Users/danyaalsahi/Documents/New project/bin"
+ZSHRC="$HOME/.zshrc"
+LINE='export PATH="/Users/danyaalsahi/Documents/New project/bin:$PATH"'
+
+if ! grep -Fq "$LINE" "$ZSHRC" 2>/dev/null; then
+  printf '\n# quickq terminal search\n%s\n' "$LINE" >> "$ZSHRC"
+  echo "Added quickq to PATH in $ZSHRC"
+else
+  echo "quickq PATH entry already exists in $ZSHRC"
+fi
+
+echo "Run: source $ZSHRC"
+echo "Then use: quickq \"latest version of nodejs\""

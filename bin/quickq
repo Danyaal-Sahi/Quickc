@@ -1,0 +1,124 @@
+#!/usr/bin/env node
+
+/**
+ * quickq: tiny terminal web lookup
+ * Usage: quickq "latest version of nodejs"
+ */
+
+const query = process.argv.slice(2).join(" ").trim();
+
+if (!query) {
+  console.error('Usage: quickq "your query"');
+  process.exit(1);
+}
+
+const endpoint = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+const htmlEndpoint = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+
+function firstRelated(topics) {
+  for (const item of topics || []) {
+    if (item && item.Text && item.FirstURL) return item;
+    if (item && Array.isArray(item.Topics)) {
+      const nested = firstRelated(item.Topics);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
+function decodeEntities(text) {
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
+function stripTags(text) {
+  return decodeEntities(text.replace(/<[^>]*>/g, "")).trim();
+}
+
+function normalizeResultUrl(rawUrl) {
+  const decodedRaw = decodeEntities(rawUrl);
+  if (!decodedRaw.startsWith("//duckduckgo.com/l/?")) return decodedRaw;
+
+  try {
+    const wrapped = new URL(`https:${decodedRaw}`);
+    const uddg = wrapped.searchParams.get("uddg");
+    return uddg ? decodeURIComponent(uddg) : decodedRaw;
+  } catch {
+    return decodedRaw;
+  }
+}
+
+async function fetchTopWebResult() {
+  const res = await fetch(htmlEndpoint, {
+    headers: {
+      "User-Agent": "quickq-cli/1.0"
+    }
+  });
+
+  if (!res.ok) return null;
+  const html = await res.text();
+
+  const titleMatch = html.match(/<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+  if (!titleMatch) return null;
+
+  const snippetMatch = html.match(/<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/i);
+  return {
+    url: normalizeResultUrl(titleMatch[1]),
+    title: stripTags(titleMatch[2]),
+    snippet: snippetMatch ? stripTags(snippetMatch[1]) : ""
+  };
+}
+
+(async () => {
+  try {
+    const res = await fetch(endpoint, {
+      headers: {
+        "User-Agent": "quickq-cli/1.0"
+      }
+    });
+
+    if (!res.ok) {
+      console.error(`Search failed (${res.status})`);
+      process.exit(1);
+    }
+
+    const data = await res.json();
+
+    const heading = data.Heading?.trim();
+    const abstract = data.AbstractText?.trim();
+    const abstractUrl = data.AbstractURL?.trim();
+    const related = firstRelated(data.RelatedTopics);
+
+    if (heading && abstract) {
+      console.log(`${heading}`);
+      console.log(`${abstract}`);
+      if (abstractUrl) console.log(`${abstractUrl}`);
+      process.exit(0);
+    }
+
+    if (related) {
+      console.log(`${related.Text}`);
+      console.log(`${related.FirstURL}`);
+      process.exit(0);
+    }
+
+    const topResult = await fetchTopWebResult();
+    if (topResult) {
+      console.log(topResult.title);
+      if (topResult.snippet) console.log(topResult.snippet);
+      console.log(topResult.url);
+      process.exit(0);
+    }
+
+    const fallback = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
+    console.log("No direct instant answer found.");
+    console.log(`Open results: ${fallback}`);
+  } catch (err) {
+    console.error(`Search error: ${err.message}`);
+    process.exit(1);
+  }
+})();
